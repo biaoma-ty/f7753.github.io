@@ -79,16 +79,21 @@
 
 
 
-<meta name="description" content="个人博客">
-<meta property="og:type" content="website">
-<meta property="og:title" content="Lewinma&#39;s Blog">
-<meta property="og:url" content="https://wwww.lewinma.club/index.html">
+<meta name="description" content="Receiver介绍Spark Streaming中负责数据接收的是Receiver，在Streaming作业开始的时候，通过SparkStreamingContext调用， Receiver的作用是接收数据以及存储数据。然后Spark中负责数据处理的模块将存储在Spark的BlockManager中的通过创建新的RDD数据转化为DStream。之后用户就可以通过Spark Streaming中的">
+<meta property="og:type" content="article">
+<meta property="og:title" content="Spark Streaming Back pressure Internals">
+<meta property="og:url" content="https://wwww.lewinma.club/2019/02/19/hello-world/index.html">
 <meta property="og:site_name" content="Lewinma&#39;s Blog">
-<meta property="og:description" content="个人博客">
+<meta property="og:description" content="Receiver介绍Spark Streaming中负责数据接收的是Receiver，在Streaming作业开始的时候，通过SparkStreamingContext调用， Receiver的作用是接收数据以及存储数据。然后Spark中负责数据处理的模块将存储在Spark的BlockManager中的通过创建新的RDD数据转化为DStream。之后用户就可以通过Spark Streaming中的">
 <meta property="og:locale" content="zh-Hans">
+<meta property="og:image" content="https://wwww.lewinma.club/2019/02/19/hello-world/img/dataflow">
+<meta property="og:image" content="https://wwww.lewinma.club/2019/02/19/hello-world/img/cur_arch.png">
+<meta property="og:image" content="https://wwww.lewinma.club/2019/02/19/hello-world/img/after_arch.png">
+<meta property="og:updated_time" content="2019-02-19T13:04:32.839Z">
 <meta name="twitter:card" content="summary">
-<meta name="twitter:title" content="Lewinma&#39;s Blog">
-<meta name="twitter:description" content="个人博客">
+<meta name="twitter:title" content="Spark Streaming Back pressure Internals">
+<meta name="twitter:description" content="Receiver介绍Spark Streaming中负责数据接收的是Receiver，在Streaming作业开始的时候，通过SparkStreamingContext调用， Receiver的作用是接收数据以及存储数据。然后Spark中负责数据处理的模块将存储在Spark的BlockManager中的通过创建新的RDD数据转化为DStream。之后用户就可以通过Spark Streaming中的">
+<meta name="twitter:image" content="https://wwww.lewinma.club/2019/02/19/hello-world/img/dataflow">
 
 
 
@@ -118,13 +123,13 @@
 
 
 
-  <link rel="canonical" href="https://wwww.lewinma.club/">
+  <link rel="canonical" href="https://wwww.lewinma.club/2019/02/19/hello-world/">
 
 
 
 
 
-  <title>Lewinma's Blog - 以戒为师</title>
+  <title>Spark Streaming Back pressure Internals | Lewinma's Blog</title>
   
 
 
@@ -143,8 +148,7 @@
     
   
 
-  <div class="container sidebar-position-left 
-  page-home">
+  <div class="container sidebar-position-left page-post-detail">
     <div class="headband"></div>
 
     <header id="header" class="header" itemscope="" itemtype="http://schema.org/WPHeader">
@@ -309,9 +313,9 @@
         <div class="content-wrap">
           <div id="content" class="content">
             
-  <section id="posts" class="posts-expand">
+
+  <div id="posts" class="posts-expand">
     
-      
 
   
 
@@ -341,9 +345,7 @@
 
         
         
-          <h2 class="post-title" itemprop="name headline">
-                
-                <a class="post-title-link" href="/2019/02/19/hello-world/" itemprop="url">Spark Streaming Back pressure Internals</a></h2>
+          <h2 class="post-title" itemprop="name headline">Spark Streaming Back pressure Internals</h2>
         
 
         <div class="post-meta">
@@ -393,9 +395,7 @@
       
 
       
-        
-          
-            <h2 id="Receiver介绍"><a href="#Receiver介绍" class="headerlink" title="Receiver介绍"></a>Receiver介绍</h2><p>Spark Streaming中负责数据接收的是Receiver，在Streaming作业开始的时候，通过SparkStreamingContext调用， Receiver的作用是接收数据以及存储数据。然后Spark中负责数据处理的模块将存储在Spark的BlockManager中的通过创建新的RDD数据转化为DStream。之后用户就可以通过Spark Streaming中的两种操作：transformation和output operation来操作DStream。对于每个输入的数据源，只会有一个Receiver。</p>
+        <h2 id="Receiver介绍"><a href="#Receiver介绍" class="headerlink" title="Receiver介绍"></a>Receiver介绍</h2><p>Spark Streaming中负责数据接收的是Receiver，在Streaming作业开始的时候，通过SparkStreamingContext调用， Receiver的作用是接收数据以及存储数据。然后Spark中负责数据处理的模块将存储在Spark的BlockManager中的通过创建新的RDD数据转化为DStream。之后用户就可以通过Spark Streaming中的两种操作：transformation和output operation来操作DStream。对于每个输入的数据源，只会有一个Receiver。</p>
 <h2 id="Spark-Streaming中的数据流"><a href="#Spark-Streaming中的数据流" class="headerlink" title="Spark Streaming中的数据流"></a>Spark Streaming中的数据流</h2><p>在Spark Streaming中，当一个Receiver启动的时候，在每个spark.streaming.blockInterval所设定的毫秒时间间隔中，都会新建一个block，每个block会成为DStream中的RDD的一个Partition。用户的输入源可能有多种多样，比如KafkaInputDStream，这些不同的DStream来源，如何确定其Partition的数目呢？其实是通过<code>batchInterval / spark.streaming.blockInterval</code> 来确定的，而batchInterval就是用户在创建<code>SparkStreamingContext</code>时传递给构造器的时间参数，举例来说，如果一个batch的Interval是2s(默认情况)同时blockInterval的间隔是200ms(默认情况)，那么RDD将会有10个partition。<br>一旦RDD创建成功，其处理过程可以像一个job一样被driver的JobScheduler调度，在当前的实现中，Spark Streaming如果采用默认的配置，任意一个时间点上只有一个job是active的，所以如果一个batch的处理时间比interval长，那么下一个batch的job将会被阻塞。<br>job的并发数只有1的原因是，多个job并发执行可能会导致复杂的资源共享问题，在资源不足的时候，这些问题很难debug。job并发数为1的话则会比较容易发现：只要job的处理速度比interval间隔短，那么系统就是稳定的。<br>数据和元数据的情况如下所示：<br><img src="img/dataflow" alt=""></p>
 <p>RDD创建之前的数据流用粗箭头表示，元数据使用正常宽度的箭头表示。<code>private</code>的数据结构使用虚线框表示，<code>public</code>的数据结构使用实现框表示，队列使用红色表示。<br>一些要点：</p>
 <ul>
@@ -506,8 +506,6 @@
 <li><a href="https://www.dropbox.com/s/dwgl7wa1z5wbkg6/PIDderivation.pdf?dl=0" target="_blank" rel="noopener">Operating on back-pressure in Spark with a PID</a></li>
 </ul>
 
-          
-        
       
     </div>
     
@@ -524,12 +522,12 @@
       
 
       
+      
+      
 
       
 
       
-      
-        <div class="post-eof"></div>
       
     </footer>
   </div>
@@ -539,10 +537,11 @@
   </article>
 
 
-    
-  </section>
 
-  
+    <div class="post-spread">
+      
+    </div>
+  </div>
 
 
           </div>
@@ -550,6 +549,14 @@
 
 
           
+
+  
+    <div id="gitalk-container"></div>
+    <link rel="stylesheet" href="https://unpkg.com/gitalk/dist/gitalk.css">
+
+  
+
+
 
         </div>
         
@@ -570,8 +577,17 @@
       
 
       
+        <ul class="sidebar-nav motion-element">
+          <li class="sidebar-nav-toc sidebar-nav-active" data-target="post-toc-wrap">
+            文章目录
+          </li>
+          <li class="sidebar-nav-overview" data-target="site-overview-wrap">
+            站点概览
+          </li>
+        </ul>
+      
 
-      <section class="site-overview-wrap sidebar-panel sidebar-panel-active">
+      <section class="site-overview-wrap sidebar-panel">
         <div class="site-overview">
           <div class="site-author motion-element" itemprop="author" itemscope="" itemtype="http://schema.org/Person">
             
@@ -635,6 +651,22 @@
         </div>
       </section>
 
+      
+      <!--noindex-->
+        <section class="post-toc-wrap motion-element sidebar-panel sidebar-panel-active">
+          <div class="post-toc">
+
+            
+              
+            
+
+            
+              <div class="post-toc-content"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#Receiver介绍"><span class="nav-number">1.</span> <span class="nav-text">Receiver介绍</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#Spark-Streaming中的数据流"><span class="nav-number">2.</span> <span class="nav-text">Spark Streaming中的数据流</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#难点"><span class="nav-number">3.</span> <span class="nav-text">难点</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#Back-pressure-信号量"><span class="nav-number">3.1.</span> <span class="nav-text">Back-pressure 信号量</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#复用性"><span class="nav-number">3.2.</span> <span class="nav-text">复用性</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#兼容性：如何发送back-pressure信号"><span class="nav-number">3.3.</span> <span class="nav-text">兼容性：如何发送back-pressure信号</span></a><ol class="nav-child"><li class="nav-item nav-level-4"><a class="nav-link" href="#解决方案"><span class="nav-number">3.3.1.</span> <span class="nav-text">解决方案</span></a></li></ol></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#要求"><span class="nav-number">4.</span> <span class="nav-text">要求</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#数据恢复"><span class="nav-number">4.1.</span> <span class="nav-text">数据恢复</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#性能"><span class="nav-number">4.2.</span> <span class="nav-text">性能</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#易维护性"><span class="nav-number">4.3.</span> <span class="nav-text">易维护性</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#可选方案"><span class="nav-number">5.</span> <span class="nav-text">可选方案</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#实现细节"><span class="nav-number">6.</span> <span class="nav-text">实现细节</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#代码修改"><span class="nav-number">7.</span> <span class="nav-text">代码修改</span></a></li></ol></div>
+            
+
+          </div>
+        </section>
+      <!--/noindex-->
       
 
       
@@ -781,6 +813,10 @@
   
 
   
+  <script type="text/javascript" src="/js/src/scrollspy.js?v=5.1.4"></script>
+<script type="text/javascript" src="/js/src/post-details.js?v=5.1.4"></script>
+
+
 
   
 
@@ -823,6 +859,22 @@
 
 
     
+        
+        <script src="https://unpkg.com/gitalk/dist/gitalk.min.js"></script>
+        <script src="https://cdn.bootcss.com/blueimp-md5/2.10.0/js/md5.js"></script>
+        <script type="text/javascript">
+            const gitalk = new Gitalk({
+            clientID: 'c08b491433633fd3aade',
+            clientSecret: 'ea6f29bd4ac73bd84d66b43dcbbcf7427964b47d',
+            repo: 'gitalk',
+            owner: 'f7753',
+            admin: 'f7753'.split(','),
+            pagerDirection: 'first',
+            id: md5(window.location.pathname),
+            distractionFreeMode: false
+            })
+            gitalk.render('gitalk-container')
+        </script>
         
     
 
